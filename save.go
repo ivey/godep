@@ -7,21 +7,20 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/kr/fs"
 )
 
 var cmdSave = &Command{
-	Usage: "save [-r] [-copy=false] [packages]",
+	Usage: "save [-r] [packages]",
 	Short: "list and copy dependencies into Godeps",
 	Long: `
 Save writes a list of the dependencies of the named packages along
 with the exact source control revision of each dependency, and copies
 their source code into a subdirectory.
 
-The dependency list is a JSON document with the following structure:
+The package list is a JSON document with the following structure:
 
 	type Godeps struct {
 		ImportPath string
@@ -63,6 +62,10 @@ func init() {
 }
 
 func runSave(cmd *Command, args []string) {
+	if !saveCopy {
+		log.Println("flag unsupported: -copy=false")
+		cmd.UsageExit()
+	}
 	err := save(args)
 	if err != nil {
 		log.Fatalln(err)
@@ -70,9 +73,6 @@ func runSave(cmd *Command, args []string) {
 }
 
 func save(pkgs []string) error {
-	if !saveCopy {
-		log.Println(strings.TrimSpace(copyWarning))
-	}
 	dot, err := LoadPackages(".")
 	if err != nil {
 		return err
@@ -81,10 +81,7 @@ func save(pkgs []string) error {
 	if err != nil {
 		return err
 	}
-	manifest := "Godeps"
-	if saveCopy {
-		manifest = filepath.Join("Godeps", "Godeps.json")
-	}
+	manifest := filepath.Join("Godeps", "Godeps.json")
 	var gold Godeps
 	err = ReadGodeps(manifest, &gold)
 	if err != nil && !os.IsNotExist(err) {
@@ -107,11 +104,6 @@ func save(pkgs []string) error {
 	if err != nil {
 		return err
 	}
-	if a := badSandboxVCS(gnew.Deps); a != nil && !saveCopy {
-		log.Println("Unsupported sandbox VCS:", strings.Join(a, ", "))
-		log.Printf("Instead, run: godep save -copy %s", strings.Join(pkgs, " "))
-		return errors.New("error")
-	}
 	if gnew.Deps == nil {
 		gnew.Deps = make([]Dependency, 0) // produce json [], not null
 	}
@@ -119,13 +111,11 @@ func save(pkgs []string) error {
 	if err != nil {
 		return err
 	}
-	if saveCopy {
-		os.Remove("Godeps") // remove regular file if present; ignore error
-		path := filepath.Join("Godeps", "Readme")
-		err = writeFile(path, strings.TrimSpace(Readme)+"\n")
-		if err != nil {
-			log.Println(err)
-		}
+	os.Remove("Godeps") // remove regular file if present; ignore error
+	path := filepath.Join("Godeps", "Readme")
+	err = writeFile(path, strings.TrimSpace(Readme)+"\n")
+	if err != nil {
+		log.Println(err)
 	}
 	f, err := os.Create(manifest)
 	if err != nil {
@@ -139,25 +129,23 @@ func save(pkgs []string) error {
 	if err != nil {
 		return err
 	}
-	if saveCopy {
-		// We use a name starting with "_" so the go tool
-		// ignores this directory when traversing packages
-		// starting at the project's root. For example,
-		//   godep go list ./...
-		workspace := filepath.Join("Godeps", "_workspace")
-		srcdir := filepath.Join(workspace, "src")
-		rem := subDeps(gold.Deps, gnew.Deps)
-		add := subDeps(gnew.Deps, gold.Deps)
-		err = removeSrc(srcdir, rem)
-		if err != nil {
-			return err
-		}
-		err = copySrc(srcdir, add)
-		if err != nil {
-			return err
-		}
-		writeVCSIgnore(workspace)
+	// We use a name starting with "_" so the go tool
+	// ignores this directory when traversing packages
+	// starting at the project's root. For example,
+	//   godep go list ./...
+	workspace := filepath.Join("Godeps", "_workspace")
+	srcdir := filepath.Join(workspace, "src")
+	rem := subDeps(gold.Deps, gnew.Deps)
+	add := subDeps(gnew.Deps, gold.Deps)
+	err = removeSrc(srcdir, rem)
+	if err != nil {
+		return err
 	}
+	err = copySrc(srcdir, add)
+	if err != nil {
+		return err
+	}
+	writeVCSIgnore(workspace)
 	var rewritePaths []string
 	if saveR {
 		for _, dep := range gnew.Deps {
@@ -232,18 +220,6 @@ Diff:
 		diff = append(diff, da)
 	}
 	return diff
-}
-
-// badSandboxVCS returns a list of VCSes that don't work
-// with the `godep go` sandbox code.
-func badSandboxVCS(deps []Dependency) (a []string) {
-	for _, d := range deps {
-		if d.vcs.CreateCmd == "" {
-			a = append(a, d.vcs.vcs.Name)
-		}
-	}
-	sort.Strings(a)
-	return uniq(a)
 }
 
 func removeSrc(srcdir string, deps []Dependency) error {
