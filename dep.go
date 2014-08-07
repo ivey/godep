@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -197,91 +196,6 @@ func (g *Godeps) WriteTo(w io.Writer) (int64, error) {
 	}
 	n, err := w.Write(append(b, '\n'))
 	return int64(n), err
-}
-
-// Returns a path to the local copy of d's repository.
-// E.g.
-//
-//   ImportPath             RepoPath
-//   github.com/kr/s3       $spool/github.com/kr/s3
-//   github.com/lib/pq/oid  $spool/github.com/lib/pq
-func (d Dependency) RepoPath() string {
-	return filepath.Join(spool, "repo", d.repoRoot.Root)
-}
-
-// Returns a URL for the remote copy of the repository.
-func (d Dependency) RemoteURL() string {
-	return d.repoRoot.Repo
-}
-
-// Returns the url of a local disk clone of the repo, if any.
-func (d Dependency) FastRemotePath() string {
-	if d.outerRoot != "" {
-		return d.outerRoot + "/src/" + d.repoRoot.Root
-	}
-	return ""
-}
-
-// Returns a path to the checked-out copy of d's commit.
-func (d Dependency) Workdir() string {
-	return filepath.Join(d.Gopath(), "src", d.ImportPath)
-}
-
-// Returns a path to the checked-out copy of d's repo root.
-func (d Dependency) WorkdirRoot() string {
-	return filepath.Join(d.Gopath(), "src", d.repoRoot.Root)
-}
-
-// Returns a path to a parent of Workdir such that using
-// Gopath in GOPATH makes d available to the go tool.
-func (d Dependency) Gopath() string {
-	return filepath.Join(spool, "rev", d.Rev[:2], d.Rev[2:])
-}
-
-// Creates an empty repo in d.RepoPath().
-func (d Dependency) CreateRepo(fastRemote, mainRemote string) error {
-	if err := os.MkdirAll(d.RepoPath(), 0777); err != nil {
-		return err
-	}
-	if err := d.vcs.create(d.RepoPath()); err != nil {
-		return err
-	}
-	if err := d.link(fastRemote, d.FastRemotePath()); err != nil {
-		return err
-	}
-	return d.link(mainRemote, d.RemoteURL())
-}
-
-func (d Dependency) link(remote, url string) error {
-	return d.vcs.link(d.RepoPath(), remote, url)
-}
-
-func (d Dependency) fetchAndCheckout(remote string) error {
-	if err := d.fetch(remote); err != nil {
-		return fmt.Errorf("fetch: %s", err)
-	}
-	if err := d.checkout(); err != nil {
-		return fmt.Errorf("checkout: %s", err)
-	}
-	return nil
-}
-
-func (d Dependency) fetch(remote string) error {
-	return d.vcs.fetch(d.RepoPath(), remote)
-}
-
-func (d Dependency) checkout() error {
-	dir := d.WorkdirRoot()
-	if exists(dir) {
-		return nil
-	}
-	if !d.vcs.exists(d.RepoPath(), d.Rev) {
-		return fmt.Errorf("unknown rev %s for %s", d.Rev, d.ImportPath)
-	}
-	if err := os.MkdirAll(dir, 0777); err != nil {
-		return err
-	}
-	return d.vcs.checkout(dir, d.Rev, d.RepoPath())
 }
 
 // containsPathPrefix returns whether any string in a

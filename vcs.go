@@ -14,20 +14,10 @@ import (
 type VCS struct {
 	vcs *vcs.Cmd
 
-	// run in outer GOPATH
 	IdentifyCmd string
 	DescribeCmd string
 	DiffCmd     string
-
-	// run in sandbox repos
-	CreateCmd   string
-	LinkCmd     string
 	ExistsCmd   string
-	FetchCmd    string
-	CheckoutCmd string
-
-	// If nil, LinkCmd is used.
-	LinkFunc func(dir, remote, url string) error
 }
 
 var vcsBzr = &VCS{
@@ -44,12 +34,7 @@ var vcsGit = &VCS{
 	IdentifyCmd: "rev-parse HEAD",
 	DescribeCmd: "describe --tags",
 	DiffCmd:     "diff {rev}",
-
-	CreateCmd:   "init --bare",
-	LinkCmd:     "remote add {remote} {url}",
 	ExistsCmd:   "cat-file -e {rev}",
-	FetchCmd:    "fetch --quiet {remote}",
-	CheckoutCmd: "--git-dir {repo} --work-tree . checkout -q --force {rev}",
 }
 
 var vcsHg = &VCS{
@@ -58,12 +43,7 @@ var vcsHg = &VCS{
 	IdentifyCmd: "identify --id --debug",
 	DescribeCmd: "log -r . --template {latesttag}-{latesttagdistance}",
 	DiffCmd:     "diff -r {rev}",
-
-	CreateCmd:   "init",
-	LinkFunc:    hgLink,
 	ExistsCmd:   "cat -r {rev} .",
-	FetchCmd:    "pull {remote}",
-	CheckoutCmd: "clone -u {rev} {repo} .",
 }
 
 var cmd = map[*vcs.Cmd]*VCS{
@@ -114,34 +94,15 @@ func (v *VCS) isDirty(dir, rev string) bool {
 	return err != nil || len(out) != 0
 }
 
-func (v *VCS) create(dir string) error {
-	return v.run(dir, v.CreateCmd)
-}
-
-func (v *VCS) link(dir, remote, url string) error {
-	if v.LinkFunc != nil {
-		return v.LinkFunc(dir, remote, url)
-	}
-	return v.run(dir, v.LinkCmd, "remote", remote, "url", url)
-}
-
 func (v *VCS) exists(dir, rev string) bool {
 	err := v.runVerboseOnly(dir, v.ExistsCmd, "rev", rev)
 	return err == nil
-}
-
-func (v *VCS) fetch(dir, remote string) error {
-	return v.run(dir, v.FetchCmd, "remote", remote)
 }
 
 // RevSync checks out the revision given by rev in dir.
 // The dir must exist and rev must be a valid revision.
 func (v *VCS) RevSync(dir, rev string) error {
 	return v.run(dir, v.vcs.TagSyncCmd, "tag", rev)
-}
-
-func (v *VCS) checkout(dir, rev, repo string) error {
-	return v.run(dir, v.CheckoutCmd, "rev", rev, "repo", repo)
 }
 
 // run runs the command line cmd in the given directory.
